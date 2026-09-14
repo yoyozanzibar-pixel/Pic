@@ -9,8 +9,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 # ==================== НАСТРОЙКИ ====================
-BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # Вставьте сюда токен вашего бота
-ADMIN_PASSWORD = "mysecretpassword"    # Пароль для доступа в админку
+BOT_TOKEN = "8949058159:AAG6Q0J4_RhvYpns4ipVAEsBThFe4GzKudE"  # Вставьте сюда токен вашего бота
+ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в админку
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
