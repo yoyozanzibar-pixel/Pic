@@ -1,10 +1,10 @@
 import os
 import sqlite3
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.types import FSInputFile
+import asyncio
+from aiogram import Bot, Dispatcher, types, html
+from aiogram.filters import CommandStart, Command
 
-API_TOKEN = ("8949058159:AAG6Q0J4_RhvYpns4ipVAEsBThFe4GzKudE")  # Или вставьте ваш токен строкой: "ВАШ_ТОКЕН"
+API_TOKEN = "8949058159:AAG6Q0J4_RhvYpns4ipVAEsBThFe4GzKudE"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -24,6 +24,29 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+
+# Обработчик команды /start
+@dp.message(CommandStart())
+async def start_handler(message: types.Message):
+    # Получаем username пользователя без ID
+    username = message.from_user.username
+    if username:
+        user_display = f"@{username}"
+    else:
+        user_display = message.from_user.first_name or "друг"
+
+    start_text = (
+        f"✨ **Здравствуйте, {user_display}!** ✨\n\n"
+        f"Рады видеть вас в нашем боте! 📝🔥\n\n"
+        f"Здесь вы можете удобно и надежно сохранять:\n"
+        f"📸 **Фотографии** и памятные кадры\n"
+        f"💬 **Тексты**, важные заметки и записи\n"
+        f"💡 **Свои мысли**, идеи и вдохновение\n\n"
+        f"⭐ Мы работаем абсолютно бесплатно — **без премиумов и без звёздочек ⭐ в Telegram**!\n\n"
+        f"Просто отправьте сюда текст или фото, и всё автоматически сохранится 🚀"
+    )
+
+    await message.answer(start_text, parse_mode="Markdown")
 
 # Сохранение текстовых сообщений
 @dp.message(lambda message: message.text and not message.text.startswith('/'))
@@ -88,5 +111,4 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
