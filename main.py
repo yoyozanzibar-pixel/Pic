@@ -47,28 +47,6 @@ async def cmd_start(message: types.Message):
     )
 
 
-@dp.message()
-async def save_content(message: types.Message):
-    user_id = message.from_user.id
-    content_type = message.content_type
-    content_text = None
-
-    if message.text:
-        content_text = message.text
-        save_message(user_id, content_type, content_text)
-        await message.answer(f"Текст сохранен: {content_text}")
-    elif message.photo:
-        content_text = f"Фото (ID: {message.photo[-1].file_id})"
-        save_message(user_id, content_type, content_text)
-        await message.answer("Фото сохранено.")
-    elif message.video:
-        content_text = f"Видео (ID: {message.video.file_id})"
-        save_message(user_id, content_type, content_text)
-        await message.answer("Видео сохранено.")
-    else:
-        await message.answer("Этот тип контента не поддерживается.")
-
-
 @dp.message(Command("get_messages"))
 async def get_messages(message: types.Message):
     conn = sqlite3.connect(DB_NAME)
@@ -91,6 +69,29 @@ async def get_messages(message: types.Message):
 
     await message.answer(response)
 
+
+@dp.message()
+async def save_content(message: types.Message):
+    user_id = message.from_user.id
+    content_type = message.content_type
+    content_text = None
+
+    if message.text:
+        content_text = message.text
+        save_message(user_id, content_type, content_text)
+        await message.answer(f"Текст сохранен: {content_text}")
+    elif message.photo:
+        content_text = f"Фото (ID: {message.photo[-1].file_id})"
+        save_message(user_id, content_type, content_text)
+        await message.answer("Фото сохранено.")
+    elif message.video:
+        content_text = f"Видео (ID: {message.video.file_id})"
+        save_message(user_id, content_type, content_text)
+        await message.answer("Видео сохранено.")
+    else:
+        await message.answer("Этот тип контента не поддерживается.")
+
+
 async def main():
     init_db()
     await dp.start_polling(bot)
@@ -98,4 +99,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
