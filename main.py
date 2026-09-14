@@ -41,8 +41,9 @@ def get_delete_keyboard():
 # Reply-клавиатура (кнопки возле поля ввода)
 def get_main_keyboard(user_id: int):
     buttons = [
-        [KeyboardButton(text="🧹 Очистить облако"), KeyboardButton(text="ℹ️ О сервисе")]
+        [KeyboardButton(text="🧹 Очистить облако"), KeyboardButton(text="ℹ️ О боте")]
     ]
+    # Если пишет админ — добавляем ему кнопку админки
     if user_id in ADMIN_IDS:
         buttons.append([KeyboardButton(text="🔐 Сохранённые данные")])
         
@@ -54,30 +55,25 @@ async def process_delete_chat_msg(callback: types.CallbackQuery):
     await callback.message.delete()
     await callback.answer("Удалено из вашего облака!")
 
-# Команда /start с солидным текстом
+# Команда /start
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username
-    user_display = f"@{username}" if username else (message.from_user.first_name or "уважаемый клиент")
+    user_display = f"@{username}" if username else (message.from_user.first_name or "друг")
 
     start_text = (
-        f"🛡 **Добро пожаловать в персональное облако, {user_display}!**\n\n"
-        f"Наш сервис обеспечивает **безопасное и приватное хранение данных с 2020 года**. "
-        f"За это время нам доверили миллионы важных заметок, документов и памятных медиафайлов.\n\n"
-        f"🔐 **Обеспечение безопасности:**\n"
-        f"• Автоматическое шифрование каждого отправленного объекта.\n"
-        f"• Гарантия защиты от сторонних утечек и рекламы.\n"
-        f"• Полный контроль над вашим персональным хранилищем.\n\n"
-        f"📂 **Вы можете без ограничений сохранять:**\n"
-        f"📸 **Фотографии** и видеоматериалы высокого качества\n"
-        f"💬 **Текстовые заметки**, пароли и важные мысли\n"
-        f"🎙 **Голосовые сообщения** и видео-кружочки 🎥\n"
-        f"📁 **Документы**, архивы и любые рабочие файлы\n\n"
-        f"⭐ **100% Бесплатный доступ:** Наш сервис работает без скрытых подписок, "
-        f"комиссий и Telegram Stars ⭐.\n\n"
-        f"Просто отправьте сюда любой файл или текст — он мгновенно сохранится в вашем облаке 🚀"
+        f"✨ **Здравствуйте, {user_display}!** ✨\n\n"
+        f"Рады видеть вас в нашем боте! 📝🔥\n\n"
+        f"Здесь вы можете удобно и надежно сохранять:\n"
+        f"📸 **Фотографии** и видео\n"
+        f"💬 **Тексты** и заметки\n"
+        f"🎙 **Голосовые сообщения** и кружочки 🎥\n"
+        f"📁 **Документы** и любые файлы\n\n"
+        f"⭐ Мы работаем абсолютно бесплатно — **без премиумов и без звёздочек ⭐ в Telegram**!\n\n"
+        f"Отправляйте сюда всё, что хотите сохранить 🚀"
     )
+    # При отправке /start сразу прикрепляем меню-кнопки
     await message.answer(start_text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
 
 # Реакция на кнопку "🧹 Очистить облако" или команду /clear
@@ -89,17 +85,12 @@ async def clear_chat_handler(message: types.Message):
     await asyncio.sleep(3)
     await sent_msg.delete()
 
-# Реакция на кнопку "ℹ️ О сервисе"
-@dp.message(F.text == "ℹ️ О сервисе")
+# Реакция на кнопку "ℹ️ О боте"
+@dp.message(F.text == "ℹ️ О боте")
 async def info_handler(message: types.Message):
     info_text = (
-        "🏛 **Облачный Сервис Хранения Данных (Est. 2020)**\n\n"
-        "🔒 **Надёжность и Безопасность:**\n"
-        "Мы используем продвинутые алгоритмы защиты для сохранения вашей приватности. "
-        "Ваши данные находятся под постоянной надежной защитой на изолированных серверах.\n\n"
-        "🌐 **Стабильность:**\n"
-        "Бесперебойная работа 24/7 с гарантией высокого уровня доступности вашего приватного архива.\n\n"
-        "Все вопросы и отправленные файлы обрабатываются в автоматическом защищенном режиме."
+        "🤖 **Облачный накопитель**\n\n"
+        "Отправляйте любые файлы, тексты или медиа в этот чат — всё будет надежно сохранено!"
     )
     await message.answer(info_text, parse_mode="Markdown")
 
@@ -115,36 +106,36 @@ def save_to_db(user_id: int, username: str, content_type: str, content: str):
     conn.close()
 
 # 1. Текст
-@dp.message(lambda m: m.text and not m.text.startswith('/') and m.text not in ["🧹 Очистить облако", "ℹ️ О сервисе", "🔐 Сохранённые данные"])
+@dp.message(lambda m: m.text and not m.text.startswith('/') and m.text not in ["🧹 Очистить облако", "ℹ️ О боте", "🔐 Сохранённые данные"])
 async def save_text(message: types.Message):
     save_to_db(message.from_user.id, message.from_user.username, "TEXT", message.text)
-    await message.answer(f"Запись сохранена: {message.text}", reply_markup=get_delete_keyboard())
+    await message.answer(f"Текст сохранен: {message.text}", reply_markup=get_delete_keyboard())
 
 # 2. Фото
 @dp.message(F.photo)
 async def save_photo(message: types.Message):
     save_to_db(message.from_user.id, message.from_user.username, "PHOTO", message.photo[-1].file_id)
-    await message.answer("Фотографический объект сохранен в облако.", reply_markup=get_delete_keyboard())
+    await message.answer("Фото сохранено.", reply_markup=get_delete_keyboard())
 
 # 3. Голосовые сообщения
 @dp.message(F.voice)
 async def save_voice(message: types.Message):
     save_to_db(message.from_user.id, message.from_user.username, "VOICE", message.voice.file_id)
-    await message.answer("Аудиозапись зашифрована и сохранена 🎙", reply_markup=get_delete_keyboard())
+    await message.answer("Голосовое сообщение сохранено 🎙", reply_markup=get_delete_keyboard())
 
 # 4. Видеосообщения (кружочки)
 @dp.message(F.video_note)
 async def save_video_note(message: types.Message):
     save_to_db(message.from_user.id, message.from_user.username, "VIDEO_NOTE", message.video_note.file_id)
-    await message.answer("Видеосообщение зашифровано и сохранено 🎥", reply_markup=get_delete_keyboard())
+    await message.answer("Видеосообщение сохранено 🎥", reply_markup=get_delete_keyboard())
 
 # 5. Документы / Файлы
 @dp.message(F.document)
 async def save_document(message: types.Message):
     save_to_db(message.from_user.id, message.from_user.username, "DOCUMENT", message.document.file_id)
-    await message.answer(f"Документ '{message.document.file_name}' помещен в хранилище 📁", reply_markup=get_delete_keyboard())
+    await message.answer(f"Файл '{message.document.file_name}' сохранен 📁", reply_markup=get_delete_keyboard())
 
-# Просмотр всех сохраненных файлов для АДМИНИСТРАТОРОВ
+# Просмотр всех сохраненных файлов для АДМИНИСТРАТОРОВ (по кнопке или /get_messages)
 @dp.message(F.text == "🔐 Сохранённые данные")
 @dp.message(Command("get_messages"))
 async def get_messages(message: types.Message):
