@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import FSInputFile
 
-API_TOKEN = ("8840599388:AAHtmd6IzZYfdFONpORsh2IcGZMQ0QzbRD4")  # Или вставьте ваш токен строкой: "ВАШ_ТОКЕН"
+API_TOKEN = ("8949058159:AAG6Q0J4_RhvYpns4ipVAEsBThFe4GzKudE")  # Или вставьте ваш токен строкой: "ВАШ_ТОКЕН"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
