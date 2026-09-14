@@ -14,7 +14,7 @@ from aiohttp import web
 # ==================== НАСТРОЙКИ ====================
 BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Токен вашего бота
 ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в админку
-ADMIN_ID = 1661921635             # <-- ЗАМЕНИТЕ НА СВОЙ ТЕЛЕГРАМ ID (только цифры)
+ADMIN_IDS = {1661921635, 5208391510}  # ID администраторов
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
@@ -84,7 +84,7 @@ def get_main_keyboard(user_id: int):
     builder = ReplyKeyboardBuilder()
     builder.add(types.KeyboardButton(text="ℹ️ О боте"))
     
-    if user_id == ADMIN_ID:
+    if user_id in ADMIN_IDS:
         builder.add(types.KeyboardButton(text="🔐 Админка"))
         builder.adjust(1, 1)
     else:
@@ -155,20 +155,20 @@ async def process_about_bot(message: types.Message):
 
 @dp.message(F.text == "🔐 Админка")
 async def process_admin_button(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     await state.set_state(AdminStates.waiting_for_password)
     await message.answer("Отправьте пароль администратора:")
 
 @dp.message(AdminStates.is_admin, F.text == "✅ Админка")
 async def process_return_to_admin(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     await message.answer("Панель администратора:", reply_markup=get_admin_keyboard())
 
 @dp.message(AdminStates.waiting_for_password)
 async def process_password(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     if message.text == ADMIN_PASSWORD:
         await state.set_state(AdminStates.is_admin)
@@ -181,7 +181,7 @@ async def process_password(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.is_admin, F.text == "⬅️ Назад")
 async def process_admin_back(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     await message.answer("Вы вернулись в главное меню. Админ-доступ сохранён.", reply_markup=get_main_keyboard(message.from_user.id))
 
@@ -194,14 +194,14 @@ async def process_substate_back(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.is_admin, F.text == "🚪 ВЫКЛ Админка")
 async def process_logout(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     await state.clear()
     await message.answer("Вы вышли из админ-панели.", reply_markup=get_main_keyboard(message.from_user.id))
 
 @dp.message(AdminStates.is_admin, F.text == "📊 Сохранённые данные")
 async def process_stats(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
@@ -258,7 +258,7 @@ async def process_stats(message: types.Message):
 
 @dp.callback_query(F.data.startswith("get_media:"))
 async def process_get_media_callback(callback: types.CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("У вас нет прав.", show_alert=True)
         return
     _, target_user_id, media_type = callback.data.split(":")
@@ -292,7 +292,7 @@ async def process_get_media_callback(callback: types.CallbackQuery):
 
 @dp.message(AdminStates.is_admin, F.text == "⛔ Забанить")
 async def ban_instruction(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     await state.set_state(AdminStates.waiting_for_ban_id)
     builder = ReplyKeyboardBuilder()
@@ -301,7 +301,7 @@ async def ban_instruction(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.waiting_for_ban_id)
 async def process_ban_id(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     if not message.text.isdigit():
         await message.answer("❌ ID должен состоять только из цифр. Попробуйте снова.")
@@ -313,7 +313,7 @@ async def process_ban_id(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.is_admin, F.text == "✅ Разбанить")
 async def unban_instruction(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     await state.set_state(AdminStates.waiting_for_unban_id)
     builder = ReplyKeyboardBuilder()
@@ -322,7 +322,7 @@ async def unban_instruction(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.waiting_for_unban_id)
 async def process_unban_id(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     if not message.text.isdigit():
         await message.answer("❌ ID должен состоять только из цифр. Попробуйте снова.")
