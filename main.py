@@ -9,7 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 # ==================== НАСТРОЙКИ ====================
-BOT_TOKEN = "8949058159:AAG6Q0J4_RhvYpns4ipVAEsBThFe4GzKudE"  # Вставьте сюда токен вашего бота
+BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Вставьте сюда токен вашего бота
 ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в админку
 
 # ==================== БАЗА ДАННЫХ ====================
