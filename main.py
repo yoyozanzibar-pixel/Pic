@@ -69,6 +69,28 @@ async def save_content(message: types.Message):
         await message.answer("Этот тип контента не поддерживается.")
 
 
+@dp.message(Command("get_messages"))
+async def get_messages(message: types.Message):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT user_id, content_type, content_text FROM messages"
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        await message.answer("База данных пока пуста.")
+        return
+
+    response = "Сохраненные сообщения:\n\n"
+    for row in rows:
+        response += (
+            f"Пользователь: {row[0]} | Тип: {row[1]} | Контент: {row[2]}\n"
+        )
+
+    await message.answer(response)
+
 async def main():
     init_db()
     await dp.start_polling(bot)
@@ -76,3 +98,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
