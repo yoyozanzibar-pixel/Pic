@@ -1,101 +1,92 @@
-import asyncio
-import logging
+import os
 import sqlite3
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.types import FSInputFile
 
-TOKEN = "8840599388:AAHtmd6IzZYfdFONpORsh2IcGZMQ0QzbRD4"
-DB_NAME = "bot_data.db"
+API_TOKEN = os.getenv("BOT_TOKEN")  # Или вставьте ваш токен строкой: "ВАШ_ТОКЕН"
 
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=TOKEN)
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-
+# Инициализация БД
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
+            username TEXT,
             content_type TEXT,
-            content_text TEXT
+            content TEXT
         )
-    """
-    )
+    """)
     conn.commit()
     conn.close()
 
+# Сохранение текстовых сообщений
+@dp.message(lambda message: message.text and not message.text.startswith('/'))
+async def save_text(message: types.Message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "без_ника"
+    text = message.text
 
-def save_message(user_id, content_type, content_text):
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO messages (user_id, content_type, content_text) VALUES (?, ?, ?)",
-        (user_id, str(content_type), content_text),
+        "INSERT INTO messages (user_id, username, content_type, content) VALUES (?, ?, ?, ?)",
+        (user_id, username, "TEXT", text)
     )
     conn.commit()
     conn.close()
 
+    await message.answer(f"Текст сохранен: {text}")
 
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer(
-        "Привет! Отправь мне текст, фото или видео, и я сохраню их."
+# Сохранение фото
+@dp.message(lambda message: message.photo)
+async def save_photo(message: types.Message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "без_ника"
+    photo_id = message.photo[-1].file_id  # Берем фото лучшего качества
+
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO messages (user_id, username, content_type, content) VALUES (?, ?, ?, ?)",
+        (user_id, username, "PHOTO", photo_id)
     )
+    conn.commit()
+    conn.close()
 
+    await message.answer("Фото сохранено.")
 
+# Вывод всех сохраненных сообщений и фото
 @dp.message(Command("get_messages"))
 async def get_messages(message: types.Message):
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT user_id, content_type, content_text FROM messages"
-    )
+    cursor.execute("SELECT user_id, username, content_type, content FROM messages")
     rows = cursor.fetchall()
     conn.close()
 
     if not rows:
-        await message.answer("База данных пока пуста.")
+        await message.answer("Сохраненных сообщений пока нет.")
         return
 
-    response = "Сохраненные сообщения:\n\n"
-    for row in rows:
-        response += (
-            f"Пользователь: {row[0]} | Тип: {row[1]} | Контент: {row[2]}\n"
-        )
-
-    await message.answer(response)
-
-
-@dp.message()
-async def save_content(message: types.Message):
-    user_id = message.from_user.id
-    content_type = message.content_type
-    content_text = None
-
-    if message.text:
-        content_text = message.text
-        save_message(user_id, content_type, content_text)
-        await message.answer(f"Текст сохранен: {content_text}")
-    elif message.photo:
-        content_text = f"Фото (ID: {message.photo[-1].file_id})"
-        save_message(user_id, content_type, content_text)
-        await message.answer("Фото сохранено.")
-    elif message.video:
-        content_text = f"Видео (ID: {message.video.file_id})"
-        save_message(user_id, content_type, content_text)
-        await message.answer("Видео сохранено.")
-    else:
-        await message.answer("Этот тип контента не поддерживается.")
-
+    for user_id, username, content_type, content in rows:
+        user_info = f"Пользователь: ID {user_id} (@{username})"
+        
+        if content_type == "TEXT":
+            await message.answer(f"{user_info}\nТекст: {content}")
+        elif content_type == "PHOTO":
+            # Отправка фото прямо картинкой по file_id
+            await message.answer_photo(photo=content, caption=f"{user_info}\nСохраненное фото")
 
 async def main():
     init_db()
     await dp.start_polling(bot)
 
-
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
