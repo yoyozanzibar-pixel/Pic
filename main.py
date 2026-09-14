@@ -70,7 +70,7 @@ async def save_content(message: types.Message):
 
 
 @dp.message(Command("get_messages"))
-async def /get_messages(message: types.Message):
+async def get_messages(message: types.Message):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
