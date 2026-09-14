@@ -81,7 +81,7 @@ async def start_handler(message: types.Message):
 @dp.message(Command("clear"))
 async def clear_chat_handler(message: types.Message):
     await message.delete()
-    sent_msg = await message.answer("🧹 Ваше облако визуально очищено.")
+    sent_msg = await message.answer("🧹 Ваше облако очищено.")
     await asyncio.sleep(3)
     await sent_msg.delete()
 
