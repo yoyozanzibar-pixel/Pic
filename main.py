@@ -4,7 +4,7 @@ import sqlite3
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-TOKEN = "8840599388:AAGzGYdpMz3AriFy9v-QU6X9yrtWnak1C_bQ"
+TOKEN = "8840599388:AAHtmd6IzZYfdFONpORsh2IcGZMQ0QzbRD4"
 DB_NAME = "bot_data.db"
 
 logging.basicConfig(level=logging.INFO)
