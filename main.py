@@ -14,6 +14,7 @@ from aiohttp import web
 # ==================== НАСТРОЙКИ ====================
 BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Токен вашего бота
 ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в админку
+ADMIN_ID = 1661921635             # <-- ЗАМЕНИТЕ НА СВОЙ ТЕЛЕГРАМ ID (только цифры)
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
@@ -79,13 +80,16 @@ class AdminStates(StatesGroup):
     waiting_for_unban_id = State()
 
 # ==================== КЛАВИАТУРЫ ====================
-def get_main_keyboard(is_admin: bool = False):
+def get_main_keyboard(user_id: int):
     builder = ReplyKeyboardBuilder()
-    builder.add(types.KeyboardButton(text="🗑 Управление записями"))
     builder.add(types.KeyboardButton(text="ℹ️ О боте"))
-    admin_btn_text = "✅ Админка" if is_admin else "🔐 Админка"
-    builder.add(types.KeyboardButton(text=admin_btn_text))
-    builder.adjust(1, 2)
+    
+    if user_id == ADMIN_ID:
+        builder.add(types.KeyboardButton(text="🔐 Админка"))
+        builder.adjust(1, 1)
+    else:
+        builder.adjust(1)
+        
     return builder.as_markup(resize_keyboard=True)
 
 def get_admin_keyboard():
@@ -134,7 +138,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         "ℹ️ Также вы можете узнать подробнее о боте через меню.\n\n"
         "👇 Выберите действие в меню ниже или просто отправьте мне данные для сохранения:"
     )
-    await message.answer(start_text, parse_mode="Markdown", reply_markup=get_main_keyboard(is_admin=False))
+    await message.answer(start_text, parse_mode="Markdown", reply_markup=get_main_keyboard(message.from_user.id))
 
 @dp.message(F.text == "ℹ️ О боте")
 async def process_about_bot(message: types.Message):
@@ -149,59 +153,23 @@ async def process_about_bot(message: types.Message):
     )
     await message.answer(about_text, parse_mode="Markdown")
 
-# --- Кнопка "🗑 Управление записями" (Просмотр и удаление своих заметок) ---
-@dp.message(F.text == "🗑 Управление записями")
-async def process_manage_records(message: types.Message):
-    conn = sqlite3.connect("bot_data.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, content_type, content_preview, created_at FROM user_activity WHERE user_id = ? ORDER BY id DESC LIMIT 15",
-        (message.from_user.id,)
-    )
-    records = cursor.fetchall()
-    conn.close()
-
-    if not records:
-        await message.answer("📂 У вас пока нет сохраненных записей.")
-        return
-
-    await message.answer("📋 **Ваши последние сохраненные записи:**\nВыберите, что хотите удалить, или оставьте их.", parse_mode="Markdown")
-
-    for rec_id, c_type, preview, created_at in records:
-        builder = InlineKeyboardBuilder()
-        builder.button(text="❌ Удалить эту запись", callback_data=f"del_rec:{rec_id}")
-        
-        record_text = f"🕒 **{created_at}** [{c_type.upper()}]:\n{preview}"
-        await message.answer(record_text, parse_mode="Markdown", reply_markup=builder.as_markup())
-
-# --- Обработка удаления отдельной записи ---
-@dp.callback_query(F.data.startswith("del_rec:"))
-async def process_delete_record_callback(callback: types.CallbackQuery):
-    rec_id = int(callback.data.split(":")[1])
-
-    conn = sqlite3.connect("bot_data.db")
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM user_activity WHERE id = ? AND user_id = ?", (rec_id, callback.from_user.id))
-    conn.commit()
-    conn.close()
-
-    await callback.answer("Запись успешно удалена!", show_alert=True)
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
 @dp.message(F.text == "🔐 Админка")
 async def process_admin_button(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
     await state.set_state(AdminStates.waiting_for_password)
     await message.answer("Отправьте пароль администратора:")
 
 @dp.message(AdminStates.is_admin, F.text == "✅ Админка")
 async def process_return_to_admin(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
     await message.answer("Панель администратора:", reply_markup=get_admin_keyboard())
 
 @dp.message(AdminStates.waiting_for_password)
 async def process_password(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
     if message.text == ADMIN_PASSWORD:
         await state.set_state(AdminStates.is_admin)
         await message.answer(
@@ -213,7 +181,9 @@ async def process_password(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.is_admin, F.text == "⬅️ Назад")
 async def process_admin_back(message: types.Message):
-    await message.answer("Вы вернулись в главное меню. Админ-доступ сохранён.", reply_markup=get_main_keyboard(is_admin=True))
+    if message.from_user.id != ADMIN_ID:
+        return
+    await message.answer("Вы вернулись в главное меню. Админ-доступ сохранён.", reply_markup=get_main_keyboard(message.from_user.id))
 
 @dp.message(F.text == "⬅️ Назад")
 async def process_substate_back(message: types.Message, state: FSMContext):
@@ -224,11 +194,15 @@ async def process_substate_back(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.is_admin, F.text == "🚪 ВЫКЛ Админка")
 async def process_logout(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
     await state.clear()
-    await message.answer("Вы вышли из админ-панели.", reply_markup=get_main_keyboard(is_admin=False))
+    await message.answer("Вы вышли из админ-панели.", reply_markup=get_main_keyboard(message.from_user.id))
 
 @dp.message(AdminStates.is_admin, F.text == "📊 Сохранённые данные")
 async def process_stats(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT user_id, username, full_name FROM user_activity")
@@ -284,6 +258,9 @@ async def process_stats(message: types.Message):
 
 @dp.callback_query(F.data.startswith("get_media:"))
 async def process_get_media_callback(callback: types.CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("У вас нет прав.", show_alert=True)
+        return
     _, target_user_id, media_type = callback.data.split(":")
     target_user_id = int(target_user_id)
 
@@ -315,6 +292,8 @@ async def process_get_media_callback(callback: types.CallbackQuery):
 
 @dp.message(AdminStates.is_admin, F.text == "⛔ Забанить")
 async def ban_instruction(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
     await state.set_state(AdminStates.waiting_for_ban_id)
     builder = ReplyKeyboardBuilder()
     builder.add(types.KeyboardButton(text="⬅️ Назад"))
@@ -322,6 +301,8 @@ async def ban_instruction(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.waiting_for_ban_id)
 async def process_ban_id(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
     if not message.text.isdigit():
         await message.answer("❌ ID должен состоять только из цифр. Попробуйте снова.")
         return
@@ -332,6 +313,8 @@ async def process_ban_id(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.is_admin, F.text == "✅ Разбанить")
 async def unban_instruction(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
     await state.set_state(AdminStates.waiting_for_unban_id)
     builder = ReplyKeyboardBuilder()
     builder.add(types.KeyboardButton(text="⬅️ Назад"))
@@ -339,6 +322,8 @@ async def unban_instruction(message: types.Message, state: FSMContext):
 
 @dp.message(AdminStates.waiting_for_unban_id)
 async def process_unban_id(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
     if not message.text.isdigit():
         await message.answer("❌ ID должен состоять только из цифр. Попробуйте снова.")
         return
@@ -356,15 +341,15 @@ async def handle_user_content(message: types.Message):
 
     if message.text:
         content_type = "text"
-        preview = message.text[:100]
+        preview = message.text[:50]
     elif message.photo:
         content_type = "photo"
         file_id = message.photo[-1].file_id
-        preview = message.caption[:100] if message.caption else "[Фотография]"
+        preview = message.caption[:55] if message.caption else "[Фотография]"
     elif message.video:
         content_type = "video"
         file_id = message.video.file_id
-        preview = message.caption[:100] if message.caption else "[Видео]"
+        preview = message.caption[:50] if message.caption else "[Видео]"
     elif message.voice:
         content_type = "voice"
         file_id = message.voice.file_id
