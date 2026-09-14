@@ -1,10 +1,11 @@
 import os
 import sqlite3
 import asyncio
-from aiogram import Bot, Dispatcher, types, html
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
 
 API_TOKEN = "8949058159:AAG6Q0J4_RhvYpns4ipVAEsBThFe4GzKudE"
+ADMIN_ID = 1661921635  # Ваш ID администратора
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -28,7 +29,6 @@ def init_db():
 # Обработчик команды /start
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
-    # Получаем username пользователя без ID
     username = message.from_user.username
     if username:
         user_display = f"@{username}"
@@ -71,7 +71,7 @@ async def save_text(message: types.Message):
 async def save_photo(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username or "без_ника"
-    photo_id = message.photo[-1].file_id  # Берем фото лучшего качества
+    photo_id = message.photo[-1].file_id
 
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
@@ -84,9 +84,14 @@ async def save_photo(message: types.Message):
 
     await message.answer("Фото сохранено.")
 
-# Вывод всех сохраненных сообщений и фото
+# Вывод всех сохраненных сообщений только для администратора
 @dp.message(Command("get_messages"))
 async def get_messages(message: types.Message):
+    # Проверка доступа
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("У вас нет доступа к этой команде.")
+        return
+
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
     cursor.execute("SELECT user_id, username, content_type, content FROM messages")
@@ -103,7 +108,6 @@ async def get_messages(message: types.Message):
         if content_type == "TEXT":
             await message.answer(f"{user_info}\nТекст: {content}")
         elif content_type == "PHOTO":
-            # Отправка фото прямо картинкой по file_id
             await message.answer_photo(photo=content, caption=f"{user_info}\nСохраненное фото")
 
 async def main():
