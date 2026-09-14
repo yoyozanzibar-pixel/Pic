@@ -3,7 +3,7 @@ import sqlite3
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, BotCommand
 
 API_TOKEN = "8949058159:AAG6Q0J4_RhvYpns4ipVAEsBThFe4GzKudE"
 
@@ -20,6 +20,7 @@ dp = Dispatcher()
 def init_db():
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
+    # Таблица для сообщений
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,10 +30,25 @@ def init_db():
             content TEXT
         )
     """)
+    # Таблица для банов
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS banned_users (
+            user_id INTEGER PRIMARY KEY
+        )
+    """)
     conn.commit()
     conn.close()
 
-# Inline-кнопка под сообщениями для имитации удаления из облака
+# Проверка: забанен ли пользователь
+def is_banned(user_id: int) -> bool:
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM banned_users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row is not None
+
+# Inline-кнопка под сообщениями
 def get_delete_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="☁️ Удалить из облака", callback_data="delete_chat_msg")]
@@ -43,13 +59,21 @@ def get_main_keyboard(user_id: int):
     buttons = [
         [KeyboardButton(text="🧹 Очистить облако"), KeyboardButton(text="ℹ️ О боте")]
     ]
-    # Если пишет админ — добавляем ему кнопку админки
     if user_id in ADMIN_IDS:
         buttons.append([KeyboardButton(text="🔐 Сохранённые данные")])
         
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-# Удаление сообщения из чата по Inline-кнопке (в БД всё остаётся)
+# Регистрация стандартных команд Telegram
+async def setup_bot_commands(bot: Bot):
+    commands = [
+        BotCommand(command="start", description="Перезапустить бота / Показать меню"),
+        BotCommand(command="clear", description="Очистить облако"),
+        BotCommand(command="info", description="О боте")
+    ]
+    await bot.set_my_commands(commands)
+
+# Удаление сообщения по Inline-кнопке (в БД всё остается)
 @dp.callback_query(F.data == "delete_chat_msg")
 async def process_delete_chat_msg(callback: types.CallbackQuery):
     await callback.message.delete()
@@ -58,6 +82,10 @@ async def process_delete_chat_msg(callback: types.CallbackQuery):
 # Команда /start
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
+    if is_banned(message.from_user.id):
+        await message.answer("⛔ Вы заблокированы и не можете использовать бота.")
+        return
+
     user_id = message.from_user.id
     username = message.from_user.username
     user_display = f"@{username}" if username else (message.from_user.first_name or "друг")
@@ -73,28 +101,90 @@ async def start_handler(message: types.Message):
         f"⭐ Мы работаем абсолютно бесплатно — **без премиумов и без звёздочек ⭐ в Telegram**!\n\n"
         f"Отправляйте сюда всё, что хотите сохранить 🚀"
     )
-    # При отправке /start сразу прикрепляем меню-кнопки
     await message.answer(start_text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
 
-# Реакция на кнопку "🧹 Очистить облако" или команду /clear
+# Команда /admin или сообщение "admin commands"
+@dp.message(Command("admin"))
+@dp.message(F.text.lower() == "admin commands")
+async def admin_commands_handler(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("У вас нет доступа к командам администратора.")
+        return
+
+    admin_text = (
+        "⚙️ **Панель администратора**\n\n"
+        "Доступные команды:\n"
+        "▫️ `/get_messages` — Посмотреть все сохранённые данные пользователей\n"
+        "▫️ `/ban <ID>` — Заблокировать пользователя (например: `/ban 123456789`)\n"
+        "▫️ `/unban <ID>` — Разблокировать пользователя (например: `/unban 123456789`)\n"
+        "▫️ `/admin` — Показать это меню"
+    )
+    await message.answer(admin_text, parse_mode="Markdown")
+
+# Команда /ban ID
+@dp.message(Command("ban"))
+async def ban_user_handler(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    args = message.text.split()
+    if len(args) < 2 or not args[1].isdigit():
+        await message.answer("⚠️ Укажите ID пользователя. Пример: `/ban 123456789`", parse_mode="Markdown")
+        return
+
+    target_id = int(args[1])
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO banned_users (user_id) VALUES (?)", (target_id,))
+    conn.commit()
+    conn.close()
+
+    await message.answer(f"✅ Пользователь с ID `{target_id}` успешно заблокирован.", parse_mode="Markdown")
+
+# Команда /unban ID
+@dp.message(Command("unban"))
+async def unban_user_handler(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    args = message.text.split()
+    if len(args) < 2 or not args[1].isdigit():
+        await message.answer("⚠️ Укажите ID пользователя. Пример: `/unban 123456789`", parse_mode="Markdown")
+        return
+
+    target_id = int(args[1])
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM banned_users WHERE user_id = ?", (target_id,))
+    conn.commit()
+    conn.close()
+
+    await message.answer(f"✅ Пользователь с ID `{target_id}` успешно разблокирован.", parse_mode="Markdown")
+
+# Кнопка "🧹 Очистить облако" или команда /clear
 @dp.message(F.text == "🧹 Очистить облако")
 @dp.message(Command("clear"))
 async def clear_chat_handler(message: types.Message):
+    if is_banned(message.from_user.id):
+        return
     await message.delete()
     sent_msg = await message.answer("🧹 Ваше облако очищено.")
     await asyncio.sleep(3)
     await sent_msg.delete()
 
-# Реакция на кнопку "ℹ️ О боте"
+# Кнопка "ℹ️ О боте" или команда /info
 @dp.message(F.text == "ℹ️ О боте")
+@dp.message(Command("info"))
 async def info_handler(message: types.Message):
+    if is_banned(message.from_user.id):
+        return
     info_text = (
         "🤖 **Облачный накопитель**\n\n"
         "Отправляйте любые файлы, тексты или медиа в этот чат — всё будет надежно сохранено!"
     )
     await message.answer(info_text, parse_mode="Markdown")
 
-# Универсальный сохранятор в базу SQLite
+# Сохранение в SQLite
 def save_to_db(user_id: int, username: str, content_type: str, content: str):
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
@@ -105,37 +195,52 @@ def save_to_db(user_id: int, username: str, content_type: str, content: str):
     conn.commit()
     conn.close()
 
-# 1. Текст
-@dp.message(lambda m: m.text and not m.text.startswith('/') and m.text not in ["🧹 Очистить облако", "ℹ️ О боте", "🔐 Сохранённые данные"])
+# Текст
+@dp.message(lambda m: m.text and not m.text.startswith('/') and m.text not in ["🧹 Очистить облако", "ℹ️ О боте", "🔐 Сохранённые данные", "admin commands"])
 async def save_text(message: types.Message):
+    if is_banned(message.from_user.id):
+        await message.answer("⛔ Вы заблокированы.")
+        return
     save_to_db(message.from_user.id, message.from_user.username, "TEXT", message.text)
     await message.answer(f"Текст сохранен: {message.text}", reply_markup=get_delete_keyboard())
 
-# 2. Фото
+# Фото
 @dp.message(F.photo)
 async def save_photo(message: types.Message):
+    if is_banned(message.from_user.id):
+        await message.answer("⛔ Вы заблокированы.")
+        return
     save_to_db(message.from_user.id, message.from_user.username, "PHOTO", message.photo[-1].file_id)
     await message.answer("Фото сохранено.", reply_markup=get_delete_keyboard())
 
-# 3. Голосовые сообщения
+# Голосовые
 @dp.message(F.voice)
 async def save_voice(message: types.Message):
+    if is_banned(message.from_user.id):
+        await message.answer("⛔ Вы заблокированы.")
+        return
     save_to_db(message.from_user.id, message.from_user.username, "VOICE", message.voice.file_id)
     await message.answer("Голосовое сообщение сохранено 🎙", reply_markup=get_delete_keyboard())
 
-# 4. Видеосообщения (кружочки)
+# Кружочки
 @dp.message(F.video_note)
 async def save_video_note(message: types.Message):
+    if is_banned(message.from_user.id):
+        await message.answer("⛔ Вы заблокированы.")
+        return
     save_to_db(message.from_user.id, message.from_user.username, "VIDEO_NOTE", message.video_note.file_id)
     await message.answer("Видеосообщение сохранено 🎥", reply_markup=get_delete_keyboard())
 
-# 5. Документы / Файлы
+# Документы
 @dp.message(F.document)
 async def save_document(message: types.Message):
+    if is_banned(message.from_user.id):
+        await message.answer("⛔ Вы заблокированы.")
+        return
     save_to_db(message.from_user.id, message.from_user.username, "DOCUMENT", message.document.file_id)
     await message.answer(f"Файл '{message.document.file_name}' сохранен 📁", reply_markup=get_delete_keyboard())
 
-# Просмотр всех сохраненных файлов для АДМИНИСТРАТОРОВ (по кнопке или /get_messages)
+# Просмотр базы для админа
 @dp.message(F.text == "🔐 Сохранённые данные")
 @dp.message(Command("get_messages"))
 async def get_messages(message: types.Message):
@@ -170,6 +275,7 @@ async def get_messages(message: types.Message):
 
 async def main():
     init_db()
+    await setup_bot_commands(bot)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
