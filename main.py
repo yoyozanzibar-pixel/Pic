@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.types import BotCommand, BotCommandScopeDefault
 
 # ==================== НАСТРОЙКИ ====================
 BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Токен вашего бота
@@ -80,20 +81,19 @@ class AdminStates(StatesGroup):
 # ==================== КЛАВИАТУРЫ ====================
 def get_main_keyboard(is_admin: bool = False):
     builder = ReplyKeyboardBuilder()
-    builder.add(types.KeyboardButton(text="☁️ Удалить из облака"))
     builder.add(types.KeyboardButton(text="ℹ️ О боте"))
     admin_btn_text = "✅ Админка" if is_admin else "🔐 Админка"
     builder.add(types.KeyboardButton(text=admin_btn_text))
-    builder.adjust(2, 1)
+    builder.adjust(1, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def get_admin_keyboard():
     builder = ReplyKeyboardBuilder()
     builder.add(types.KeyboardButton(text="📊 Сохранённые данные"))
-    builder.add(types.KeyboardButton(text="⛔ Забанить (Инструкция)"))
-    builder.add(types.KeyboardButton(text="✅ Разбанить (Инструкция)"))
+    builder.add(types.KeyboardButton(text="⛔ Забанить"))
+    builder.add(types.KeyboardButton(text="✅ Разбанить"))
+    builder.add(types.KeyboardButton(text="🚪 ВЫКЛ Админка"))
     builder.add(types.KeyboardButton(text="⬅️ Назад"))
-    builder.add(types.KeyboardButton(text="🚪 Выйти из админки"))
     builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
@@ -122,10 +122,19 @@ async def check_ban_middleware(handler, event: types.Message, data):
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer(
-        "Привет! Выберите действие в меню ниже или отправьте мне данные для сохранения.",
-        reply_markup=get_main_keyboard(is_admin=False)
+    user_name = message.from_user.first_name or message.from_user.username or "друг"
+    
+    start_text = (
+        f"Здравствуйте, {user_name}! 👋✨\n\n"
+        "Спасибо большое, что выбрали именно нас! 🤍\n\n"
+        "🔒 У нас всё абсолютно конфиденциально и надежно. "
+        "В этом боте вы можете свободно хранить свои мысли, "
+        "аудиосообщения и видео. Вы можете создавать, редактировать "
+        "и удалять любые записи в любое время — всё под вашим полным контролем! 📝🎙️🎥\n\n"
+        "ℹ️ Также вы можете узнать подробнее о боте через меню.\n\n"
+        "👇 Выберите действие в меню ниже или просто отправьте мне данные для сохранения:"
     )
+    await message.answer(start_text, parse_mode="Markdown", reply_markup=get_main_keyboard(is_admin=False))
 
 # --- Пользовательская кнопка "ℹ️ О боте" ---
 @dp.message(F.text == "ℹ️ О боте")
@@ -140,25 +149,6 @@ async def process_about_bot(message: types.Message):
         "Спасибо, что выбираете нас!"
     )
     await message.answer(about_text, parse_mode="Markdown")
-
-# --- Пользовательская кнопка "☁️ Удалить из облака" ---
-@dp.message(F.text == "☁️ Удалить из облака")
-async def process_fake_cloud_delete(message: types.Message):
-    status_msg = await message.answer("🔄 Подключение к облачному хранилищу...")
-    await asyncio.sleep(1)
-    
-    await status_msg.edit_text("⏳ Синхронизация и очистка облачных данных...")
-    await asyncio.sleep(1.5)
-    
-    await status_msg.edit_text("✅ Все данные успешно и безвозвратно удалены из облака!")
-    await asyncio.sleep(1.5)
-
-    current_msg_id = message.message_id
-    for msg_id in range(current_msg_id + 1, current_msg_id - 25, -1):
-        try:
-            await bot.delete_message(chat_id=message.chat.id, message_id=msg_id)
-        except Exception:
-            pass
 
 # --- 1. Кнопка "🔐 Админка" (когда не авторизован) ---
 @dp.message(F.text == "🔐 Админка")
@@ -197,7 +187,7 @@ async def process_substate_back(message: types.Message, state: FSMContext):
         await message.answer("Панель администратора:", reply_markup=get_admin_keyboard())
 
 # --- 4. Полный выход из админки ---
-@dp.message(AdminStates.is_admin, F.text == "🚪 Выйти из админки")
+@dp.message(AdminStates.is_admin, F.text == "🚪 ВЫКЛ Админка")
 async def process_logout(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Вы вышли из админ-панели.", reply_markup=get_main_keyboard(is_admin=False))
@@ -294,7 +284,7 @@ async def process_get_media_callback(callback: types.CallbackQuery):
             logging.error(f"Ошибка при отправке медиафайла: {e}")
 
 # --- 7. Бан и разбан ---
-@dp.message(AdminStates.is_admin, F.text == "⛔ Забанить (Инструкция)")
+@dp.message(AdminStates.is_admin, F.text == "⛔ Забанить")
 async def ban_instruction(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_ban_id)
     builder = ReplyKeyboardBuilder()
@@ -311,7 +301,7 @@ async def process_ban_id(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.is_admin)
     await message.answer(f"⛔ Пользователь с ID `{user_id}` успешно забанен!", parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
-@dp.message(AdminStates.is_admin, F.text == "✅ Разбанить (Инструкция)")
+@dp.message(AdminStates.is_admin, F.text == "✅ Разбанить")
 async def unban_instruction(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_unban_id)
     builder = ReplyKeyboardBuilder()
@@ -342,7 +332,7 @@ async def handle_user_content(message: types.Message):
     elif message.photo:
         content_type = "photo"
         file_id = message.photo[-1].file_id
-        preview = message.caption[:50] if message.caption else "[Фотография]"
+        preview = message.caption[:55] if message.caption else "[Фотография]"
     elif message.video:
         content_type = "video"
         file_id = message.video.file_id
@@ -371,6 +361,10 @@ async def handle_user_content(message: types.Message):
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
+    
+    # Очищаем дефолтное меню команд бота, чтобы там ничего лишнего не торчало
+    await bot.set_my_commands([], scope=BotCommandScopeDefault())
+    
     print("Бот успешно запущен!")
     await dp.start_polling(bot)
 
