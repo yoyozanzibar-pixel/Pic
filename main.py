@@ -12,9 +12,9 @@ from aiogram.types import BotCommand, BotCommandScopeDefault
 from aiohttp import web
 
 # ==================== НАСТРОЙКИ ====================
-BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Токен вашего бота
-ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в админку
-ADMIN_IDS = {1661921635, 5208391510}  # ID администраторов
+BOT_TOKEN = "8949058159:AAGYuhlBJb9NJL9o646sKHFdy-NVzxiOuGQ"
+ADMIN_PASSWORD = "VAYGYOTYLNEM"
+ADMIN_IDS = {1661921635, 5208391510}
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
@@ -37,7 +37,6 @@ def init_db():
             user_id INTEGER PRIMARY KEY
         )
     """)
-    # ← ДОБАВЛЕНО: таблица для профилей (телефоны)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_profiles (
             user_id INTEGER PRIMARY KEY,
@@ -79,7 +78,6 @@ def unban_user(user_id: int):
     conn.commit()
     conn.close()
 
-# ← ДОБАВЛЕНО: функции для работы с телефоном
 def save_phone(user_id: int, phone: str):
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
@@ -109,14 +107,14 @@ class AdminStates(StatesGroup):
 def get_main_keyboard(user_id: int):
     builder = ReplyKeyboardBuilder()
     builder.add(types.KeyboardButton(text="ℹ️ О боте"))
-    builder.add(types.KeyboardButton(text="💰 Кэш"))          # ← ДОБАВЛЕНО
-    builder.add(types.KeyboardButton(text="👤 Мой профиль"))  # ← ДОБАВЛЕНО
+    builder.add(types.KeyboardButton(text="💰 Кэш"))
+    builder.add(types.KeyboardButton(text="👤 Мой профиль"))
     
     if user_id in ADMIN_IDS:
         builder.add(types.KeyboardButton(text="🔐 Админка"))
-        builder.adjust(1, 1, 1, 1)   # ← ИЗМЕНЕНО: 4 кнопки
+        builder.adjust(1, 1, 1, 1)
     else:
-        builder.adjust(1, 1, 1)      # ← ИЗМЕНЕНО: 3 кнопки
+        builder.adjust(1, 1, 1)
         
     return builder.as_markup(resize_keyboard=True)
 
@@ -181,7 +179,6 @@ async def process_about_bot(message: types.Message):
     )
     await message.answer(about_text, parse_mode="Markdown")
 
-# ← ДОБАВЛЕНО: обработчик кнопки "💰 Кэш"
 @dp.message(F.text == "💰 Кэш")
 async def process_cache(message: types.Message):
     conn = sqlite3.connect("bot_data.db")
@@ -216,7 +213,6 @@ async def process_cache(message: types.Message):
     for chunk in chunks:
         await message.answer(chunk, parse_mode="Markdown")
 
-# ← ДОБАВЛЕНО: обработчик кнопки "👤 Мой профиль"
 @dp.message(F.text == "👤 Мой профиль")
 async def process_profile(message: types.Message):
     user = message.from_user
@@ -271,7 +267,6 @@ async def process_profile(message: types.Message):
     else:
         await message.answer(profile_text, parse_mode="Markdown")
 
-# ← ДОБАВЛЕНО: обработчик получения контакта (номера телефона)
 @dp.message(F.contact)
 async def process_contact(message: types.Message):
     if message.contact.user_id != message.from_user.id:
@@ -291,7 +286,6 @@ async def process_admin_button(message: types.Message, state: FSMContext):
         return
     current_state = await state.get_state()
     if current_state == AdminStates.is_admin.state:
-        # ← ИЗМЕНЕНО: уже авторизован — сразу панель, без пароля
         await message.answer("Панель администратора:", reply_markup=get_admin_keyboard())
     else:
         await state.set_state(AdminStates.waiting_for_password)
@@ -320,7 +314,6 @@ async def process_password(message: types.Message, state: FSMContext):
 async def process_admin_back(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
-    # ← ИЗМЕНЕНО: не сбрасываем состояние is_admin, просто показываем меню
     await message.answer(
         "Вы вернулись в главное меню. Админ-доступ сохранён.",
         reply_markup=get_main_keyboard(message.from_user.id)
