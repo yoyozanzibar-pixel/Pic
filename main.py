@@ -83,12 +83,13 @@ class AdminStates(StatesGroup):
 def get_main_keyboard(user_id: int):
     builder = ReplyKeyboardBuilder()
     builder.add(types.KeyboardButton(text="ℹ️ О боте"))
+    builder.add(types.KeyboardButton(text="💰 Кэш"))
     
     if user_id in ADMIN_IDS:
         builder.add(types.KeyboardButton(text="🔐 Админка"))
-        builder.adjust(1, 1)
+        builder.adjust(1, 1, 1)
     else:
-        builder.adjust(1)
+        builder.adjust(1, 1)
         
     return builder.as_markup(resize_keyboard=True)
 
@@ -113,6 +114,41 @@ def get_user_media_inline_keyboard(user_id: int):
 # ==================== БОТ И ДИСПАТЧЕР ====================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+@dp.message(F.text == "💰 Кэш")
+async def process_cache(message: types.Message):
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT content_preview, created_at FROM user_activity "
+        "WHERE user_id = ? AND content_type = 'text' ORDER BY id DESC",
+        (message.from_user.id,)
+    )
+    texts = cursor.fetchall()
+    conn.close()
+
+    if not texts:
+        await message.answer("📭 У вас пока нет сохранённых текстовых сообщений.")
+        return
+
+    # Telegram ограничивает длину сообщения 4096 символами — разбиваем на части
+    header = f"💰 **Ваши сохранённые тексты ({len(texts)}):**\n\n"
+    chunks = []
+    current = header
+
+    for i, (text, created_at) in enumerate(texts, 1):
+        entry = f"**{i}.** [{created_at}]\n{text}\n\n"
+        if len(current) + len(entry) > 4000:
+            chunks.append(current)
+            current = entry
+        else:
+            current += entry
+
+    if current:
+        chunks.append(current)
+
+    for chunk in chunks:
+        await message.answer(chunk, parse_mode="Markdown")
 
 @dp.message.outer_middleware()
 async def check_ban_middleware(handler, event: types.Message, data):
