@@ -12,7 +12,7 @@ from aiogram.types import BotCommand, BotCommandScopeDefault
 from aiohttp import web
 
 # ==================== НАСТРОЙКИ ====================
-BOT_TOKEN = "8949058159:AAGu6p81ZgSFFCg7fY169FY535Tx8Us0wU4"  # Токен вашего бота
+BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Токен вашего бота
 ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в админку
 ADMIN_IDS = {1661921635, 5208391510}  # ID администраторов
 
@@ -35,6 +35,13 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS banned_users (
             user_id INTEGER PRIMARY KEY
+        )
+    """)
+    # ← ДОБАВЛЕНО: таблица для профилей (телефоны)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id INTEGER PRIMARY KEY,
+            phone TEXT
         )
     """)
     conn.commit()
@@ -72,6 +79,25 @@ def unban_user(user_id: int):
     conn.commit()
     conn.close()
 
+# ← ДОБАВЛЕНО: функции для работы с телефоном
+def save_phone(user_id: int, phone: str):
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR REPLACE INTO user_profiles (user_id, phone) VALUES (?, ?)",
+        (user_id, phone)
+    )
+    conn.commit()
+    conn.close()
+
+def get_phone(user_id: int):
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT phone FROM user_profiles WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
+
 # ==================== FSM (СОСТОЯНИЯ) ====================
 class AdminStates(StatesGroup):
     waiting_for_password = State()
@@ -83,13 +109,14 @@ class AdminStates(StatesGroup):
 def get_main_keyboard(user_id: int):
     builder = ReplyKeyboardBuilder()
     builder.add(types.KeyboardButton(text="ℹ️ О боте"))
-    builder.add(types.KeyboardButton(text="💰 Кэш"))
+    builder.add(types.KeyboardButton(text="💰 Кэш"))          # ← ДОБАВЛЕНО
+    builder.add(types.KeyboardButton(text="👤 Мой профиль"))  # ← ДОБАВЛЕНО
     
     if user_id in ADMIN_IDS:
         builder.add(types.KeyboardButton(text="🔐 Админка"))
-        builder.adjust(1, 1, 1)
+        builder.adjust(1, 1, 1, 1)   # ← ИЗМЕНЕНО: 4 кнопки
     else:
-        builder.adjust(1, 1)
+        builder.adjust(1, 1, 1)      # ← ИЗМЕНЕНО: 3 кнопки
         
     return builder.as_markup(resize_keyboard=True)
 
@@ -114,41 +141,6 @@ def get_user_media_inline_keyboard(user_id: int):
 # ==================== БОТ И ДИСПАТЧЕР ====================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-
-@dp.message(F.text == "💰 Кэш")
-async def process_cache(message: types.Message):
-    conn = sqlite3.connect("bot_data.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT content_preview, created_at FROM user_activity "
-        "WHERE user_id = ? AND content_type = 'text' ORDER BY id DESC",
-        (message.from_user.id,)
-    )
-    texts = cursor.fetchall()
-    conn.close()
-
-    if not texts:
-        await message.answer("📭 У вас пока нет сохранённых текстовых сообщений.")
-        return
-
-    # Telegram ограничивает длину сообщения 4096 символами — разбиваем на части
-    header = f"💰 **Ваши сохранённые тексты ({len(texts)}):**\n\n"
-    chunks = []
-    current = header
-
-    for i, (text, created_at) in enumerate(texts, 1):
-        entry = f"**{i}.** [{created_at}]\n{text}\n\n"
-        if len(current) + len(entry) > 4000:
-            chunks.append(current)
-            current = entry
-        else:
-            current += entry
-
-    if current:
-        chunks.append(current)
-
-    for chunk in chunks:
-        await message.answer(chunk, parse_mode="Markdown")
 
 @dp.message.outer_middleware()
 async def check_ban_middleware(handler, event: types.Message, data):
@@ -189,12 +181,121 @@ async def process_about_bot(message: types.Message):
     )
     await message.answer(about_text, parse_mode="Markdown")
 
+# ← ДОБАВЛЕНО: обработчик кнопки "💰 Кэш"
+@dp.message(F.text == "💰 Кэш")
+async def process_cache(message: types.Message):
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT content_preview, created_at FROM user_activity "
+        "WHERE user_id = ? AND content_type = 'text' ORDER BY id DESC",
+        (message.from_user.id,)
+    )
+    texts = cursor.fetchall()
+    conn.close()
+
+    if not texts:
+        await message.answer("📭 У вас пока нет сохранённых текстовых сообщений.")
+        return
+
+    header = f"💰 **Ваши сохранённые тексты ({len(texts)}):**\n\n"
+    chunks = []
+    current = header
+
+    for i, (text, created_at) in enumerate(texts, 1):
+        entry = f"**{i}.** [{created_at}]\n{text}\n\n"
+        if len(current) + len(entry) > 4000:
+            chunks.append(current)
+            current = entry
+        else:
+            current += entry
+
+    if current:
+        chunks.append(current)
+
+    for chunk in chunks:
+        await message.answer(chunk, parse_mode="Markdown")
+
+# ← ДОБАВЛЕНО: обработчик кнопки "👤 Мой профиль"
+@dp.message(F.text == "👤 Мой профиль")
+async def process_profile(message: types.Message):
+    user = message.from_user
+
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT content_type, COUNT(*) FROM user_activity WHERE user_id = ? GROUP BY content_type",
+        (user.id,)
+    )
+    stats = dict(cursor.fetchall())
+    conn.close()
+
+    text_count = stats.get("text", 0)
+    photo_count = stats.get("photo", 0)
+    video_count = stats.get("video", 0)
+    voice_count = stats.get("voice", 0)
+    doc_count = stats.get("document", 0)
+    total = sum(stats.values())
+
+    username_str = f"@{user.username}" if user.username else "— (не установлен)"
+    phone = get_phone(user.id)
+    phone_str = phone if phone else "— (не указан)"
+
+    profile_text = (
+        f"👤 **Ваш профиль**\n\n"
+        f"🆔 **User ID:** `{user.id}`\n"
+        f"📛 **Имя:** {user.full_name}\n"
+        f"🔗 **Username:** {username_str}\n"
+        f"📱 **Телефон:** {phone_str}\n"
+        f"🌐 **Язык:** {user.language_code or '—'}\n"
+        f"⭐ **Premium:** {'Да' if getattr(user, 'is_premium', False) else 'Нет'}\n\n"
+        f"📊 **Статистика заметок:**\n"
+        f"📝 Текстов: {text_count}\n"
+        f"🖼 Фото: {photo_count}\n"
+        f"🎥 Видео: {video_count}\n"
+        f"🎤 Голосовых: {voice_count}\n"
+        f"📎 Документов: {doc_count}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"📦 **Всего записей:** {total}"
+    )
+
+    if not phone:
+        kb = ReplyKeyboardBuilder()
+        kb.button(text="📱 Поделиться номером", request_contact=True)
+        await message.answer(
+            profile_text,
+            parse_mode="Markdown",
+            reply_markup=kb.as_markup(resize_keyboard=True, one_time_keyboard=True)
+        )
+        await message.answer("👇 Или выберите действие в меню:", reply_markup=get_main_keyboard(user.id))
+    else:
+        await message.answer(profile_text, parse_mode="Markdown")
+
+# ← ДОБАВЛЕНО: обработчик получения контакта (номера телефона)
+@dp.message(F.contact)
+async def process_contact(message: types.Message):
+    if message.contact.user_id != message.from_user.id:
+        await message.answer("❌ Пожалуйста, поделитесь именно **своим** номером.", parse_mode="Markdown")
+        return
+
+    save_phone(message.from_user.id, message.contact.phone_number)
+    await message.answer(
+        f"✅ Номер `{message.contact.phone_number}` сохранён в вашем профиле!",
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard(message.from_user.id)
+    )
+
 @dp.message(F.text == "🔐 Админка")
 async def process_admin_button(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
-    await state.set_state(AdminStates.waiting_for_password)
-    await message.answer("Отправьте пароль администратора:")
+    current_state = await state.get_state()
+    if current_state == AdminStates.is_admin.state:
+        # ← ИЗМЕНЕНО: уже авторизован — сразу панель, без пароля
+        await message.answer("Панель администратора:", reply_markup=get_admin_keyboard())
+    else:
+        await state.set_state(AdminStates.waiting_for_password)
+        await message.answer("Отправьте пароль администратора:")
 
 @dp.message(AdminStates.is_admin, F.text == "✅ Админка")
 async def process_return_to_admin(message: types.Message):
@@ -216,10 +317,14 @@ async def process_password(message: types.Message, state: FSMContext):
         await message.answer("❌ Неверный пароль! Попробуйте ещё раз или нажмите /start для отмены.")
 
 @dp.message(AdminStates.is_admin, F.text == "⬅️ Назад")
-async def process_admin_back(message: types.Message):
+async def process_admin_back(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
-    await message.answer("Вы вернулись в главное меню. Админ-доступ сохранён.", reply_markup=get_main_keyboard(message.from_user.id))
+    # ← ИЗМЕНЕНО: не сбрасываем состояние is_admin, просто показываем меню
+    await message.answer(
+        "Вы вернулись в главное меню. Админ-доступ сохранён.",
+        reply_markup=get_main_keyboard(message.from_user.id)
+    )
 
 @dp.message(F.text == "⬅️ Назад")
 async def process_substate_back(message: types.Message, state: FSMContext):
