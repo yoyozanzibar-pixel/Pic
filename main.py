@@ -12,7 +12,7 @@ from aiogram.types import BotCommand, BotCommandScopeDefault
 from aiohttp import web
 
 # ==================== НАСТРОЙКИ ====================
-BOT_TOKEN = "8949058159:AAGd6WcDw8Z7rEQKS79oioazJpQtaygOLHw"  # Токен вашего бота
+BOT_TOKEN = "8949058159:AAGu6p81ZgSFFCg7fY169FY535Tx8Us0wU4"  # Токен вашего бота
 ADMIN_PASSWORD = "VAYG7YLNEM"    # Пароль для доступа в админку
 ADMIN_IDS = {1661921635, 5208391510}  # ID администраторов
 
