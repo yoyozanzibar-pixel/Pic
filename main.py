@@ -133,7 +133,8 @@ def get_user_media_inline_keyboard(user_id: int):
     builder.button(text="📸 Фотографии", callback_data=f"get_media:{user_id}:photo")
     builder.button(text="🎥 Видео", callback_data=f"get_media:{user_id}:video")
     builder.button(text="🎤 Голосовые", callback_data=f"get_media:{user_id}:voice")
-    builder.adjust(3)
+    builder.button(text="📦 Прочие", callback_data=f"get_media:{user_id}:other")
+    builder.adjust(3, 1)
     return builder.as_markup()
 
 # ==================== БОТ И ДИСПАТЧЕР ====================
@@ -231,6 +232,7 @@ async def process_profile(message: types.Message):
     video_count = stats.get("video", 0)
     voice_count = stats.get("voice", 0)
     doc_count = stats.get("document", 0)
+    other_count = sum(count for c_type, count in stats.items() if c_type not in ["text", "photo", "video", "voice"])
     total = sum(stats.values())
 
     username_str = f"@{user.username}" if user.username else "— (не установлен)"
@@ -251,6 +253,7 @@ async def process_profile(message: types.Message):
         f"🎥 Видео: {video_count}\n"
         f"🎤 Голосовых: {voice_count}\n"
         f"📎 Документов: {doc_count}\n"
+        f"📦 Прочее: {other_count}\n"
         f"━━━━━━━━━━━━━━━\n"
         f"📦 **Всего записей:** {total}"
     )
@@ -400,10 +403,18 @@ async def process_get_media_callback(callback: types.CallbackQuery):
 
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT file_id, content_preview FROM user_activity WHERE user_id = ? AND content_type = ? AND file_id IS NOT NULL",
-        (target_user_id, media_type)
-    )
+    
+    if media_type == "other":
+        cursor.execute(
+            "SELECT file_id, content_preview, content_type FROM user_activity WHERE user_id = ? AND content_type NOT IN ('text', 'photo', 'video', 'voice') AND file_id IS NOT NULL",
+            (target_user_id,)
+        )
+    else:
+        cursor.execute(
+            "SELECT file_id, content_preview, content_type FROM user_activity WHERE user_id = ? AND content_type = ? AND file_id IS NOT NULL",
+            (target_user_id, media_type)
+        )
+        
     media_records = cursor.fetchall()
     conn.close()
 
@@ -413,14 +424,23 @@ async def process_get_media_callback(callback: types.CallbackQuery):
 
     await callback.answer("Отправляю файлы...")
 
-    for file_id, caption in media_records:
+    for file_id, caption, c_type in media_records:
         try:
-            if media_type == "photo":
+            if media_type == "photo" or c_type == "photo":
                 await bot.send_photo(callback.from_user.id, photo=file_id, caption=caption)
-            elif media_type == "video":
+            elif media_type == "video" or c_type == "video":
                 await bot.send_video(callback.from_user.id, video=file_id, caption=caption)
-            elif media_type == "voice":
+            elif media_type == "voice" or c_type == "voice":
                 await bot.send_voice(callback.from_user.id, voice=file_id)
+            elif media_type == "other":
+                if c_type == "animation":
+                    await bot.send_animation(callback.from_user.id, animation=file_id, caption=caption)
+                elif c_type == "sticker":
+                    await bot.send_sticker(callback.from_user.id, sticker=file_id)
+                elif c_type == "document":
+                    await bot.send_document(callback.from_user.id, document=file_id, caption=caption)
+                else:
+                    await bot.send_document(callback.from_user.id, document=file_id, caption=caption)
         except Exception as e:
             logging.error(f"Ошибка при отправке медиафайла: {e}")
 
@@ -488,6 +508,14 @@ async def handle_user_content(message: types.Message):
         content_type = "voice"
         file_id = message.voice.file_id
         preview = f"[Голосовое {message.voice.duration} сек.]"
+    elif message.animation:
+        content_type = "animation"
+        file_id = message.animation.file_id
+        preview = message.caption[:50] if message.caption else "[Анимация]"
+    elif message.sticker:
+        content_type = "sticker"
+        file_id = message.sticker.file_id
+        preview = "[Стикер]"
     elif message.document:
         content_type = "document"
         file_id = message.document.file_id
